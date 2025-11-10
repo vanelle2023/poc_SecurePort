@@ -317,16 +317,18 @@ function onARSelect() {
     }
 }
 
-
-// --- Weitere Funktionen (onWindowResize, onPointerMove, buildInfoContent, onDoubleClick, showInfoBoxAtScreen, hideInfoBox, fitCameraToObject, goToPreset, createGroundSurface, onLocationSelect) ---
-// ... (bleiben unverändert gegenüber der vorherigen Version von main.js) ...
 function onLocationSelect(event) {
+    if (renderer.xr.isPresenting) return; // Ignoriere in AR
     if (!model) return;
     const targetName = event.target.value;
     if (targetName === '') return;
+    
+    // Setzt das Dropdown zurück auf den ersten Eintrag, nachdem ausgewählt wurde
+    event.target.value = ''; 
 
     let targetObject = null;
     model.traverse(obj => {
+        // ANNAHME: Die Namen in der GLB-Datei sind korrekt. Wir suchen das Objekt.
         if (obj.name === targetName) {
             targetObject = obj;
         }
@@ -334,18 +336,28 @@ function onLocationSelect(event) {
 
     if (targetObject) {
         fitCameraToObject(targetObject, 1.3);
-        if (hovered !== targetObject) {
-             if (hovered && hovered.userData._origMat) {
-                hovered.material = hovered.userData._origMat;
-            }
-            if (!targetObject.userData._origMat) targetObject.userData._origMat = targetObject.material;
-            targetObject.material = targetObject.material.clone();
-            targetObject.material.emissive = new THREE.Color(0x333333);
-            targetObject.material.emissiveIntensity = 0.7;
-            hovered = targetObject;
+        
+        // **MANUELLES SETZEN DES HIGHLIGHTS UND PINNEN DER INFO-BOX**
+        // 1. Altes Highlight entfernen
+        if (hovered && hovered.userData._origMat) {
+            hovered.material = hovered.userData._origMat;
         }
+
+        // 2. Neues Highlight setzen
+        if (!targetObject.userData._origMat) targetObject.userData._origMat = targetObject.material;
+        targetObject.material = targetObject.material.clone();
+        targetObject.material.emissive = new THREE.Color(0x555555); // Gleiches Highlight wie Hover
+        targetObject.material.emissiveIntensity = 0.8;
+        hovered = targetObject; // Setze das neue hervorgehobene Objekt
+
+        // 3. Info-Box pinnen und anzeigen
         isInfoBoxPinned = true;
-        showInfoBoxAtScreen(targetObject.position, {
+        
+        // Finde die Bildschirmkoordinaten des Objekts, um die Box zu platzieren
+        const bbox = new THREE.Box3().setFromObject(targetObject);
+        const center = bbox.getCenter(new THREE.Vector3());
+        
+        showInfoBoxAtScreen(center, {
             title: targetObject.name || 'Gebäudeteil',
             body: buildInfoContent(targetObject)
         });
