@@ -5,32 +5,29 @@ import TWEEN from 'https://unpkg.com/@tweenjs/tween.js@18.6.4/dist/tween.esm.js'
 export function setupAR(app) {
   const { renderer, scene, camera } = app;
 
-  // UI
   const hint = document.getElementById('hint');
   const controlsDiv = document.getElementById('controls');
 
-  // State
+  // AR-State
   let reticle;
   let hitTestSource = null;
   let hitTestSourceInitialized = false;
+  let localFloor = null;
   let arPlaced = false;
   let floatMode = false;
+  let planeTrackingSupported = false;
 
-  // --- AR Button erstellen ---
-  document.body.appendChild(ARButton.createButton(renderer, { requiredFeatures: ['local-floor'] }));
-
-  // --- Reticle initialisieren ---
-  initReticle();
-
-  // --- Extra Button (Schwebemodus) ---
+  // --- Buttons ---
   const floatBtn = document.createElement('button');
   floatBtn.textContent = '🪁 Schwebemodus';
   floatBtn.className = 'ctrl-btn';
-  floatBtn.style.position = 'fixed';
-  floatBtn.style.bottom = '80px';
-  floatBtn.style.right = '20px';
-  floatBtn.style.zIndex = '25';
-  floatBtn.style.display = 'none';
+  Object.assign(floatBtn.style, {
+    position: 'fixed',
+    bottom: '80px',
+    right: '20px',
+    zIndex: '25',
+    display: 'none'
+  });
   document.body.appendChild(floatBtn);
 
   floatBtn.addEventListener('click', () => {
@@ -39,25 +36,41 @@ export function setupAR(app) {
     if (app.model) app.model.baseY = app.model.position.y;
   });
 
-  // --- AR Session Start ---
-  renderer.xr.addEventListener('sessionstart', () => {
+  // --- Reticle ---
+  initReticle();
+
+  // --- AR Button ---
+  document.body.appendChild(ARButton.createButton(renderer, { requiredFeatures: ['local-floor'] }));
+
+  // --- Session Start ---
+  renderer.xr.addEventListener('sessionstart', async () => {
     controlsDiv.style.display = 'none';
-    hint.textContent = 'Bewege dein Gerät, um eine Fläche (z. B. Tisch) zu finden...';
     hint.style.display = 'block';
+    hint.textContent = 'Suche eine Oberfläche (z. B. Tisch oder Boden)...';
     reticle.visible = false;
     arPlaced = false;
     floatBtn.style.display = 'none';
 
     const session = renderer.xr.getSession();
-    session.requestReferenceSpace('viewer').then((refSpace) => {
-      session.requestHitTestSource({ space: refSpace }).then((source) => {
-        hitTestSource = source;
-        hitTestSourceInitialized = true;
-      });
-    });
+
+    try {
+      const [viewerSpace, floorSpace] = await Promise.all([
+        session.requestReferenceSpace('viewer'),
+        session.requestReferenceSpace('local-floor')
+      ]);
+
+      localFloor = floorSpace;
+      const source = await session.requestHitTestSource({ space: viewerSpace });
+      hitTestSource = source;
+      hitTestSourceInitialized = true;
+      planeTrackingSupported = true;
+    } catch (err) {
+      console.warn('⚠️ HitTest nicht unterstützt – Fallback aktiv.');
+      planeTrackingSupported = false;
+    }
   });
 
-  // --- AR Session Ende ---
+  // --- Session Ende ---
   renderer.xr.addEventListener('sessionend', () => {
     controlsDiv.style.display = 'flex';
     reticle.visible = false;
@@ -67,33 +80,30 @@ export function setupAR(app) {
     if (app.model && !scene.children.includes(app.model)) scene.add(app.model);
   });
 
-  // --- Tippen / Platzieren ---
+  // --- Tap / Select Event ---
   renderer.xr.addEventListener('select', () => {
     if (!app.model) return;
 
-    // 1. Platzierung
-    if (!arPlaced && reticle.visible) {
-      // Modell an Reticle-Position setzen
-      const pos = new THREE.Vector3();
-      pos.setFromMatrixPosition(reticle.matrix);
+    // --- 1. Platzierung ---
+    if (!arPlaced) {
+      let pos = new THREE.Vector3();
+
+      if (planeTrackingSupported && reticle.visible) {
+        pos.setFromMatrixPosition(reticle.matrix);
+      } else {
+        // Fallback: einfach vor Kamera
+        pos.set(0, -0.3, -1.0).applyMatrix4(camera.matrixWorld);
+      }
+
       app.model.position.copy(pos);
       app.model.rotation.set(0, 0, 0);
       app.model.scale.setScalar(0.001);
       scene.add(app.model);
 
-      // Pop-in Animation
+      // Pop-In Animation
       new TWEEN.Tween(app.model.scale)
         .to({ x: 1, y: 1, z: 1 }, 800)
         .easing(TWEEN.Easing.Elastic.Out)
-        .start();
-
-      // Optisches Feedback
-      const glow = createGlowEffect();
-      glow.position.copy(pos);
-      scene.add(glow);
-      new TWEEN.Tween(glow.material)
-        .to({ opacity: 0 }, 1500)
-        .onComplete(() => scene.remove(glow))
         .start();
 
       reticle.visible = false;
@@ -103,33 +113,29 @@ export function setupAR(app) {
       return;
     }
 
-    // 2. Interaktion mit Modell
-    if (arPlaced) {
-      const raycaster = new THREE.Raycaster();
-      raycaster.setFromCamera({ x: 0, y: 0 }, camera);
-      const hits = raycaster.intersectObjects(app.model.children, true);
+    // --- 2. Interaktion nach Platzierung ---
+    const raycaster = new THREE.Raycaster();
+    raycaster.setFromCamera({ x: 0, y: 0 }, camera);
+    const hits = raycaster.intersectObjects(app.model.children, true);
 
-      if (hits.length > 0) {
-        const hit = hits[0].object;
+    if (hits.length > 0) {
+      const hit = hits[0].object;
 
-        // kleine "Boing"-Animation
-        new TWEEN.Tween(hit.scale)
-          .to({ x: 1.2, y: 1.2, z: 1.2 }, 180)
-          .yoyo(true)
-          .repeat(1)
-          .easing(TWEEN.Easing.Quadratic.Out)
-          .start();
+      new TWEEN.Tween(hit.scale)
+        .to({ x: 1.2, y: 1.2, z: 1.2 }, 200)
+        .yoyo(true)
+        .repeat(1)
+        .easing(TWEEN.Easing.Quadratic.Out)
+        .start();
 
-        // optionales Info-Popup
-        showPopup(hit.name, hit.userData?.nutzung || 'Unbekannt');
-      }
+      showPopup(hit.name || 'Gebäude', hit.userData?.nutzung || 'Keine Infos');
     }
   });
 
-  // --- Render Loop / AR-HitTest ---
+  // --- Render Loop ---
   renderer.setAnimationLoop((timestamp, frame) => {
-    if (hitTestSourceInitialized && frame && !arPlaced) {
-      const refSpace = renderer.xr.getReferenceSpace();
+    if (hitTestSourceInitialized && frame && !arPlaced && planeTrackingSupported) {
+      const refSpace = localFloor || renderer.xr.getReferenceSpace();
       const hits = frame.getHitTestResults(hitTestSource);
 
       if (hits.length > 0) {
@@ -137,27 +143,26 @@ export function setupAR(app) {
         const pose = hit.getPose(refSpace);
         reticle.visible = true;
         reticle.matrix.fromArray(pose.transform.matrix);
-
-        // Atmende Reticle-Animation
         const s = 1 + 0.05 * Math.sin(performance.now() / 200);
         reticle.scale.set(s, s, s);
-
-        hint.textContent = '📍 Tippe auf die Fläche, um zu platzieren';
+        hint.textContent = '📍 Tippe, um das Modell zu platzieren';
       } else {
         reticle.visible = false;
-        hint.textContent = 'Suche eine stabile Fläche (Tisch, Boden)...';
+        hint.textContent = 'Suche eine Fläche mit Struktur (z. B. Tisch)';
       }
+    } else if (!planeTrackingSupported && !arPlaced) {
+      reticle.visible = true;
+      reticle.position.set(0, -0.3, -1.0).applyMatrix4(camera.matrixWorld);
+      hint.textContent = 'Gerät unterstützt kein AR-Tracking → Modell wird vor Kamera platziert';
     }
 
-    // Floating Mode Animation
+    // Float Mode
     if (floatMode && app.model) {
       app.model.rotation.y += 0.005;
       app.model.position.y = app.model.baseY + 0.03 * Math.sin(Date.now() / 300);
     }
 
-    // Update Tween Animationen
     TWEEN.update();
-
     renderer.render(scene, camera);
   });
 
@@ -168,23 +173,12 @@ export function setupAR(app) {
       color: 0x00ffff,
       side: THREE.DoubleSide,
       transparent: true,
-      opacity: 0.8,
+      opacity: 0.8
     });
     reticle = new THREE.Mesh(geo, mat);
     reticle.matrixAutoUpdate = false;
     reticle.visible = false;
     scene.add(reticle);
-  }
-
-  function createGlowEffect() {
-    const geo = new THREE.RingGeometry(0.25, 0.4, 64).rotateX(-Math.PI / 2);
-    const mat = new THREE.MeshBasicMaterial({
-      color: 0x00ffff,
-      transparent: true,
-      opacity: 0.6,
-      side: THREE.DoubleSide,
-    });
-    return new THREE.Mesh(geo, mat);
   }
 
   function showPopup(title, info) {
@@ -195,7 +189,7 @@ export function setupAR(app) {
       bottom: '140px',
       left: '50%',
       transform: 'translateX(-50%)',
-      background: 'rgba(0,0,0,0.75)',
+      background: 'rgba(0,0,0,0.8)',
       color: '#fff',
       padding: '8px 14px',
       borderRadius: '10px',
@@ -204,7 +198,7 @@ export function setupAR(app) {
       whiteSpace: 'pre-line',
       textAlign: 'center',
       opacity: 0,
-      transition: 'opacity 0.3s ease',
+      transition: 'opacity 0.3s ease'
     });
     document.body.appendChild(div);
     requestAnimationFrame(() => (div.style.opacity = 1));
