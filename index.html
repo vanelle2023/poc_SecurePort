@@ -4,65 +4,18 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Bremerhaven (AR Twin) — Secure Port</title> 
-  <style>
-    html,body { height:100%; margin:0; font-family:system-ui,Segoe UI,Roboto,Arial; -webkit-font-smoothing:antialiased; }
-    #container { width:100%; height:100vh; overflow:hidden; position:relative; background:#cccccc; } 
-
-    /* Info-Box */
-    #info-box {
-      position: absolute;
-      left: 12px;
-      top: 12px;
-      background: rgba(0,0,0,0.85); 
-      color: #fff;
-      padding: 12px;
-      border-radius: 8px;
-      max-width:320px;
-      display:none;
-      z-index: 20;
-      box-shadow: 0 8px 25px rgba(0,0,0,0.6); 
-      font-size:14px;
+  <link rel="stylesheet" href="style.css" />
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.158.0/build/three.module.js",
+      "three/examples/jsm/loaders/RGBELoader.js": "https://unpkg.com/three@0.158.0/examples/jsm/loaders/RGBELoader.js",
+      "three/examples/jsm/loaders/GLTFLoader.js": "https://unpkg.com/three@0.158.0/examples/jsm/loaders/GLTFLoader.js",
+      "three/examples/jsm/controls/OrbitControls.js": "https://unpkg.com/three@0.158.0/examples/jsm/controls/OrbitControls.js",
+      "three/examples/jsm/webxr/ARButton.js": "https://unpkg.com/three@0.158.0/examples/jsm/webxr/ARButton.js"
     }
-    #info-box h4 { margin:0 0 8px 0; font-size:16px; font-weight:700; color: #a0d8ff; } 
-    #controls {
-      position:absolute; right:12px; top:12px; z-index:20; display:flex; flex-direction:column; gap:8px;
-    }
-    .ctrl-btn {
-      background: rgba(255,255,255,0.95);
-      border: none;
-      padding:8px 10px;
-      border-radius:8px;
-      cursor:pointer;
-      font-weight:600;
-      box-shadow: 0 4px 10px rgba(0,0,0,0.12);
-      transition: background 0.1s;
-    }
-    .ctrl-btn:hover {
-        background: #e0e0e0;
-    }
-    .ctrl-row { display:flex; gap:8px; }
-    .toggle { display:flex; align-items:center; gap:6px; background:rgba(255,255,255,0.95); padding:6px 8px; border-radius:8px; }
-    
-    #location-select {
-        background: rgba(255,255,255,0.95);
-        border: none;
-        padding:8px 10px;
-        border-radius:8px;
-        cursor:pointer;
-        font-weight:600;
-        box-shadow: 0 4px 10px rgba(0,0,0,0.12);
-        appearance: none; 
-        min-width: 180px;
-    }
-
-    #hint { position:absolute; left:12px; bottom:12px; background:rgba(0,0,0,0.5); color:#fff; padding:8px 10px; border-radius:8px; z-index:20; font-size:13px; }
-
-    /* small responsive */
-    @media (max-width:720px) {
-      #controls { right:8px; top:auto; bottom:12px; flex-direction:row; flex-wrap: wrap; }
-      #info-box { max-width:240px; font-size:13px; }
-    }
-  </style>
+  }
+  </script>
 </head>
 <body>
   <div id="container"></div>
@@ -74,13 +27,13 @@
 
   <div id="controls">
     <div class="ctrl-row">
-        <select id="location-select">
-            <option value="">— Wichtige Orte —</option>
-            <option value="Klimahaus_Bremerhaven">Klimahaus</option>
-            <option value="Radarturm">Radarturm</option>
-            <option value="Weser-Strandbad">Weser Strandbad</option>
-            <option value="Deutsches_Schifffahrtsmuseum">Deutsches_Schifffahrtsmuseum</option>
-        </select>
+      <select id="location-select">
+        <option value="">— Wichtige Orte —</option>
+        <option value="Klimahaus_Bremerhaven">Klimahaus</option>
+        <option value="Radarturm">Radarturm</option>
+        <option value="Weser-Strandbad">Weser Strandbad</option>
+        <option value="Deutsches_Schifffahrtsmuseum">Deutsches Schifffahrtsmuseum</option>
+      </select>
     </div>
     <div class="ctrl-row">
       <button id="btn-top" class="ctrl-btn">Vogelansicht</button>
@@ -90,23 +43,13 @@
       <button id="btn-fit" class="ctrl-btn">Auf Objekt zoomen</button>
       <button id="btn-reset" class="ctrl-btn">Reset View</button>
     </div>
-    <div style="display:flex; gap:8px;">
+    <div class="ctrl-row">
       <label class="toggle"><input id="toggle-ground" type="checkbox" checked /> Platz/Hafen</label>
     </div>
   </div>
 
-  <!-- Anpassung für AR-Modus, da der Text beim Start geändert wird -->
-  <div id="hint">Hover: Info · **Doppelklick: Pinnen/Zoomen** · AR-Button (unten)</div>
+  <div id="hint">Hover: Info · Doppelklick: Pinnen/Zoomen · AR-Button (unten)</div>
 
-  <script type="importmap">
-  {
-    "imports": {
-      "three": "https://unpkg.com/three@0.158.0/build/three.module.js",
-      "three/examples/jsm/loaders/RGBELoader.js": "https://unpkg.com/three@0.158.0/examples/jsm/loaders/RGBELoader.js"
-    }
-  }
-  </script>
-
-  <script type="module" src="main.js"></script>
+  <script type="module" src="./js/main.js"></script>
 </body>
 </html>
