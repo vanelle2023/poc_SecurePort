@@ -8,154 +8,139 @@ export function setupAR(app) {
   const hint = document.getElementById('hint');
   const controlsDiv = document.getElementById('controls');
 
-  // === Zustände ===
-  let reticle, hitTestSource = null, localRefSpace = null;
-  let hitTestReady = false, arPlaced = false;
-  let dragging = false, floatMode = false;
+  // AR-State
+  let reticle;
+  let hitTestSource = null;
+  let hitTestSourceInitialized = false;
+  let localFloor = null;
+  let arPlaced = false;
+  let floatMode = false;
   let planeTrackingSupported = false;
 
-  // === UI Buttons ===
-  const floatBtn = createButton('🪁 Schwebemodus', 'bottom:80px;right:20px;', () => {
+  // --- Buttons ---
+  const floatBtn = document.createElement('button');
+  floatBtn.textContent = '🪁 Schwebemodus';
+  floatBtn.className = 'ctrl-btn';
+  Object.assign(floatBtn.style, {
+    position: 'fixed',
+    bottom: '80px',
+    right: '20px',
+    zIndex: '25',
+    display: 'none'
+  });
+  document.body.appendChild(floatBtn);
+
+  floatBtn.addEventListener('click', () => {
     floatMode = !floatMode;
     floatBtn.textContent = floatMode ? '🛬 Stop' : '🪁 Schwebemodus';
     if (app.model) app.model.baseY = app.model.position.y;
   });
 
-  const ui = document.createElement('div');
-  ui.innerHTML = `
-    <button id="scaleUp" class="ctrl-btn">🔍+</button>
-    <button id="scaleDown" class="ctrl-btn">🔍−</button>
-    <button id="rotate" class="ctrl-btn">🔄</button>
-  `;
-  Object.assign(ui.style, {
-    position: 'fixed',
-    bottom: '20px',
-    left: '50%',
-    transform: 'translateX(-50%)',
-    display: 'none',
-    gap: '10px',
-    zIndex: 40
-  });
-  document.body.appendChild(ui);
-
-  const scaleUpBtn = ui.querySelector('#scaleUp');
-  const scaleDownBtn = ui.querySelector('#scaleDown');
-  const rotateBtn = ui.querySelector('#rotate');
-
-  scaleUpBtn.onclick = () => app.model?.scale.multiplyScalar(1.1);
-  scaleDownBtn.onclick = () => app.model?.scale.multiplyScalar(0.9);
-  rotateBtn.onclick = () => app.model?.rotation.y += Math.PI / 6;
-
-  // === Reticle (Platzierungsanzeige) ===
+  // --- Reticle ---
   initReticle();
 
-  // === AR Button mit intelligentem Fallback ===
-  const supportsDomOverlay = navigator.userAgent.includes('Chrome') && /Android/i.test(navigator.userAgent);
+  // --- AR Button ---
+  document.body.appendChild(ARButton.createButton(renderer, { requiredFeatures: ['local-floor'] }));
 
-  const features = {
-    requiredFeatures: ['hit-test'],
-    optionalFeatures: ['local-floor', 'plane-detection'],
-  };
-  if (supportsDomOverlay) {
-    features.optionalFeatures.push('dom-overlay');
-    features.domOverlay = { root: document.body };
-  }
-
-  try {
-    const arBtn = ARButton.createButton(renderer, features);
-    document.body.appendChild(arBtn);
-  } catch (e) {
-    console.warn('⚠️ ARButton konnte nicht erstellt werden:', e);
-  }
-
-  // === Session Start ===
+  // --- Session Start ---
   renderer.xr.addEventListener('sessionstart', async () => {
     controlsDiv.style.display = 'none';
     hint.style.display = 'block';
-    hint.textContent = 'Scanne eine Oberfläche (Tisch oder Boden)...';
-    floatBtn.style.display = 'none';
-    ui.style.display = 'none';
+    hint.textContent = 'Suche eine Oberfläche (z. B. Tisch oder Boden)...';
+    reticle.visible = false;
     arPlaced = false;
+    floatBtn.style.display = 'none';
 
     const session = renderer.xr.getSession();
+
     try {
-      const viewerSpace = await session.requestReferenceSpace('viewer');
-      localRefSpace = await session.requestReferenceSpace('local-floor');
-      hitTestSource = await session.requestHitTestSource({ space: viewerSpace });
-      hitTestReady = true;
+      const [viewerSpace, floorSpace] = await Promise.all([
+        session.requestReferenceSpace('viewer'),
+        session.requestReferenceSpace('local-floor')
+      ]);
+
+      localFloor = floorSpace;
+      const source = await session.requestHitTestSource({ space: viewerSpace });
+      hitTestSource = source;
+      hitTestSourceInitialized = true;
       planeTrackingSupported = true;
-    } catch (e) {
-      console.warn('⚠️ Kein HitTest – Fallback aktiv.');
+    } catch (err) {
+      console.warn('⚠️ HitTest nicht unterstützt – Fallback aktiv.');
       planeTrackingSupported = false;
     }
-
-    // Dragging Events
-    session.addEventListener('selectstart', () => {
-      if (arPlaced) dragging = true;
-    });
-    session.addEventListener('selectend', () => {
-      dragging = false;
-    });
   });
 
-  // === Session Ende ===
+  // --- Session Ende ---
   renderer.xr.addEventListener('sessionend', () => {
     controlsDiv.style.display = 'flex';
-    floatBtn.style.display = 'none';
-    ui.style.display = 'none';
     reticle.visible = false;
+    floatBtn.style.display = 'none';
     hitTestSource = null;
-    hitTestReady = false;
+    hitTestSourceInitialized = false;
     if (app.model && !scene.children.includes(app.model)) scene.add(app.model);
   });
 
-  // === Tap → Modell platzieren ===
+  // --- Tap / Select Event ---
   renderer.xr.addEventListener('select', () => {
     if (!app.model) return;
 
+    // --- 1. Platzierung ---
     if (!arPlaced) {
       let pos = new THREE.Vector3();
+
       if (planeTrackingSupported && reticle.visible) {
         pos.setFromMatrixPosition(reticle.matrix);
       } else {
+        // Fallback: einfach vor Kamera
         pos.set(0, -0.3, -1.0).applyMatrix4(camera.matrixWorld);
       }
 
       app.model.position.copy(pos);
       app.model.rotation.set(0, 0, 0);
       app.model.scale.setScalar(0.001);
-      app.model.traverse(o => {
-        if (o.isMesh) {
-          o.castShadow = true;
-          o.receiveShadow = true;
-        }
-      });
       scene.add(app.model);
 
-      // sanfte Pop-In Animation
+      // Pop-In Animation
       new TWEEN.Tween(app.model.scale)
         .to({ x: 1, y: 1, z: 1 }, 800)
         .easing(TWEEN.Easing.Elastic.Out)
         .start();
 
-      addShadowPlane(scene, app.model);
-
+      reticle.visible = false;
       arPlaced = true;
       floatBtn.style.display = 'block';
-      ui.style.display = 'flex';
-      reticle.visible = false;
-      hint.textContent = '🎉 Modell platziert! Du kannst es drehen, skalieren oder bewegen.';
+      hint.textContent = '🎉 Modell platziert! Tippe Gebäude für Infos.';
       return;
+    }
+
+    // --- 2. Interaktion nach Platzierung ---
+    const raycaster = new THREE.Raycaster();
+    raycaster.setFromCamera({ x: 0, y: 0 }, camera);
+    const hits = raycaster.intersectObjects(app.model.children, true);
+
+    if (hits.length > 0) {
+      const hit = hits[0].object;
+
+      new TWEEN.Tween(hit.scale)
+        .to({ x: 1.2, y: 1.2, z: 1.2 }, 200)
+        .yoyo(true)
+        .repeat(1)
+        .easing(TWEEN.Easing.Quadratic.Out)
+        .start();
+
+      showPopup(hit.name || 'Gebäude', hit.userData?.nutzung || 'Keine Infos');
     }
   });
 
-  // === Render Loop ===
+  // --- Render Loop ---
   renderer.setAnimationLoop((timestamp, frame) => {
-    if (hitTestReady && frame && !arPlaced && planeTrackingSupported) {
+    if (hitTestSourceInitialized && frame && !arPlaced && planeTrackingSupported) {
+      const refSpace = localFloor || renderer.xr.getReferenceSpace();
       const hits = frame.getHitTestResults(hitTestSource);
+
       if (hits.length > 0) {
         const hit = hits[0];
-        const pose = hit.getPose(localRefSpace);
+        const pose = hit.getPose(refSpace);
         reticle.visible = true;
         reticle.matrix.fromArray(pose.transform.matrix);
         const s = 1 + 0.05 * Math.sin(performance.now() / 200);
@@ -163,21 +148,15 @@ export function setupAR(app) {
         hint.textContent = '📍 Tippe, um das Modell zu platzieren';
       } else {
         reticle.visible = false;
-        hint.textContent = 'Bewege dein Gerät, um eine Fläche zu finden.';
+        hint.textContent = 'Suche eine Fläche mit Struktur (z. B. Tisch)';
       }
+    } else if (!planeTrackingSupported && !arPlaced) {
+      reticle.visible = true;
+      reticle.position.set(0, -0.3, -1.0).applyMatrix4(camera.matrixWorld);
+      hint.textContent = 'Gerät unterstützt kein AR-Tracking → Modell wird vor Kamera platziert';
     }
 
-    // Drag-Bewegung nach Platzierung
-    if (dragging && hitTestReady && frame) {
-      const hits = frame.getHitTestResults(hitTestSource);
-      if (hits.length > 0) {
-        const pose = hits[0].getPose(localRefSpace);
-        const pos = new THREE.Vector3().setFromMatrixPosition(new THREE.Matrix4().fromArray(pose.transform.matrix));
-        app.model.position.lerp(pos, 0.25);
-      }
-    }
-
-    // Float Mode Animation
+    // Float Mode
     if (floatMode && app.model) {
       app.model.rotation.y += 0.005;
       app.model.position.y = app.model.baseY + 0.03 * Math.sin(Date.now() / 300);
@@ -187,7 +166,7 @@ export function setupAR(app) {
     renderer.render(scene, camera);
   });
 
-  // === Hilfsfunktionen ===
+  // --- Hilfsfunktionen ---
   function initReticle() {
     const geo = new THREE.RingGeometry(0.15, 0.2, 32).rotateX(-Math.PI / 2);
     const mat = new THREE.MeshBasicMaterial({
@@ -202,29 +181,30 @@ export function setupAR(app) {
     scene.add(reticle);
   }
 
-  function createButton(text, style, onClick) {
-    const btn = document.createElement('button');
-    btn.textContent = text;
-    btn.className = 'ctrl-btn';
-    Object.assign(btn.style, {
+  function showPopup(title, info) {
+    const div = document.createElement('div');
+    div.textContent = `🏙️ ${title}\n${info}`;
+    Object.assign(div.style, {
       position: 'fixed',
-      zIndex: 25,
-      display: 'none',
-      ...Object.fromEntries(style.split(';').filter(Boolean).map(s => s.split(':').map(t => t.trim())))
+      bottom: '140px',
+      left: '50%',
+      transform: 'translateX(-50%)',
+      background: 'rgba(0,0,0,0.8)',
+      color: '#fff',
+      padding: '8px 14px',
+      borderRadius: '10px',
+      fontSize: '15px',
+      zIndex: 30,
+      whiteSpace: 'pre-line',
+      textAlign: 'center',
+      opacity: 0,
+      transition: 'opacity 0.3s ease'
     });
-    btn.addEventListener('click', onClick);
-    document.body.appendChild(btn);
-    return btn;
-  }
-
-  function addShadowPlane(scene, model) {
-    const shadowPlane = new THREE.Mesh(
-      new THREE.PlaneGeometry(2, 2),
-      new THREE.ShadowMaterial({ opacity: 0.3 })
-    );
-    shadowPlane.rotation.x = -Math.PI / 2;
-    shadowPlane.position.y = model.position.y - 0.001;
-    shadowPlane.receiveShadow = true;
-    scene.add(shadowPlane);
+    document.body.appendChild(div);
+    requestAnimationFrame(() => (div.style.opacity = 1));
+    setTimeout(() => {
+      div.style.opacity = 0;
+      setTimeout(() => div.remove(), 400);
+    }, 2000);
   }
 }
