@@ -1,5 +1,5 @@
-import * as THREE from "three";
-import { ARButton } from "three/examples/jsm/webxr/ARButton.js";
+import * as THREE from 'three';
+import { ARButton } from 'three/examples/jsm/webxr/ARButton.js';
 
 export function setupAR(app) {
   const { renderer, scene, camera } = app;
@@ -9,53 +9,46 @@ export function setupAR(app) {
   let localSpace = null;
   let modelPlaced = false;
 
-  // --- AR-Button ---
+  // AR-Button
   document.body.appendChild(
-    ARButton.createButton(renderer, { requiredFeatures: ["local-floor"] })
+    ARButton.createButton(renderer, { requiredFeatures: ['local-floor'] })
   );
 
-  // --- Reticle (Kreis) ---
-  const geometry = new THREE.RingGeometry(0.15, 0.2, 32).rotateX(-Math.PI / 2);
-  const material = new THREE.MeshBasicMaterial({
-    color: 0x00ffcc,
-    side: THREE.DoubleSide,
-    transparent: true,
-    opacity: 0.8
-  });
-  reticle = new THREE.Mesh(geometry, material);
-  reticle.matrixAutoUpdate = false;
-  reticle.visible = false;
-  scene.add(reticle);
-
-  // --- Session starten ---
-  renderer.xr.addEventListener("sessionstart", async () => {
-    const session = renderer.xr.getSession();
-    const viewerSpace = await session.requestReferenceSpace("viewer");
-    localSpace = await session.requestReferenceSpace("local-floor");
-
-    session.requestHitTestSource({ space: viewerSpace }).then((source) => {
-      hitTestSource = source;
-      hitTestSourceInitialized = true;
+  // Reticle erstellen (grüner Kreis)
+  {
+    const geometry = new THREE.RingGeometry(0.15, 0.2, 32).rotateX(-Math.PI / 2);
+    const material = new THREE.MeshBasicMaterial({
+      color: 0x00ff00,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.8
     });
+    reticle = new THREE.Mesh(geometry, material);
+    reticle.matrixAutoUpdate = false;
+    reticle.visible = false;
+    scene.add(reticle);
+  }
+
+  // SessionStart
+  renderer.xr.addEventListener('sessionstart', async () => {
+    const session = renderer.xr.getSession();
+    const viewerSpace = await session.requestReferenceSpace('viewer');
+    localSpace = await session.requestReferenceSpace('local-floor');
+
+    const source = await session.requestHitTestSource({ space: viewerSpace });
+    hitTestSource = source;
+    hitTestSourceInitialized = true;
   });
 
-  // --- Session beenden ---
-  renderer.xr.addEventListener("sessionend", () => {
-    hitTestSource = null;
-    hitTestSourceInitialized = false;
-    modelPlaced = false;
-  });
-
-  // --- Tippen: Modell platzieren ---
-  renderer.xr.addEventListener("select", () => {
-    if (!app.model || modelPlaced === true) return;
+  // Select event – beim Tippen
+  renderer.xr.addEventListener('select', () => {
+    if (!app.model || modelPlaced) return;
 
     const pos = new THREE.Vector3();
-
     if (reticle.visible) {
       pos.setFromMatrixPosition(reticle.matrix);
     } else {
-      // Fallback – vor Kamera platzieren
+      // Fallback: vor Kamera platzieren
       pos.set(0, -0.3, -1).applyMatrix4(camera.matrixWorld);
     }
 
@@ -65,7 +58,7 @@ export function setupAR(app) {
     reticle.visible = false;
   });
 
-  // --- Renderloop ---
+  // Render Loop
   renderer.setAnimationLoop((timestamp, frame) => {
     if (hitTestSourceInitialized && frame && !modelPlaced) {
       const refSpace = localSpace || renderer.xr.getReferenceSpace();
