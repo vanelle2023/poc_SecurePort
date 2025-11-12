@@ -46,11 +46,11 @@ export function setupAR(app) {
   
   // --- Session Event Listeners ---
   renderer.xr.addEventListener('sessionstart', async () => {
-      // **NEUE WICHTIGE LOGIK:** Entferne das Modell, wenn es bereits in der Szene ist 
-      // (das ist der Fall, wenn es in sceneSetup.js hinzugefügt wurde).
+      if (app.groundMesh && scene.children.includes(app.groundMesh)) {
+          scene.remove(app.groundMesh);
+      }
       if (app.model && scene.children.includes(app.model)) {
           scene.remove(app.model);
-          scene.remove(app.groundMesh);
       }
       
       // Zustand zurücksetzen
