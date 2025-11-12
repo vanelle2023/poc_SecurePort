@@ -11,7 +11,7 @@ export function setupAR(app) {
 
   // AR-Button
   document.body.appendChild(
-    ARButton.createButton(renderer, { requiredFeatures: ['local-floor'] })
+    ARButton.createButton(renderer, { requiredFeatures: ['local-floor', 'hit-test'] })
   );
 
   // Reticle erstellen (grüner Kreis)
