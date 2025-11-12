@@ -1,13 +1,15 @@
-// js/arHandler.js
+// js/arHandler.js (ENDGÜLTIGE KORRIGIERTE VERSION)
+
 import * as THREE from 'three';
 import { ARButton } from 'three/examples/jsm/webxr/ARButton.js';
-// TWEEN ist im Originalcode enthalten, daher füge ich es hinzu, um die Skalierung zu ermöglichen
-import TWEEN from 'https://unpkg.com/@tweenjs/tween.js@18.6.4/dist/tween.esm.js';
+// TWEEN wird für die Pop-In Animation des Modells benötigt
+import TWEEN from 'https://unpkg.com/@tweenjs/tween.js@18.6.4/dist/tween.esm.js'; 
 
 export function setupAR(app) {
   const { renderer, scene, camera } = app;
 
   const hint = document.getElementById('hint');
+  const controlsDiv = document.getElementById('controls'); // Ist im Originalcode enthalten
 
   // simple state
   app.ar = app.ar || {};
@@ -19,7 +21,7 @@ export function setupAR(app) {
   // --- AR Button (request hit-test AND local-floor features) ---
   document.body.appendChild(
     ARButton.createButton(renderer, { 
-      requiredFeatures: ['hit-test', 'local-floor'] // <- Hinzugefügt: 'local-floor'
+      requiredFeatures: ['hit-test', 'local-floor'] 
     })
   );
 
@@ -41,11 +43,27 @@ export function setupAR(app) {
   const controller = renderer.xr.getController(0);
   controller.addEventListener('select', onSelect);
   scene.add(controller);
-
+  
   // --- Session Event Listeners ---
-  renderer.xr.addEventListener('sessionstart', () => {
-    // Initialer Hinweis bei Start
-    if(hint) hint.textContent = 'Suche eine Oberfläche...';
+  renderer.xr.addEventListener('sessionstart', async () => {
+      // **NEUE WICHTIGE LOGIK:** Entferne das Modell, wenn es bereits in der Szene ist 
+      // (das ist der Fall, wenn es in sceneSetup.js hinzugefügt wurde).
+      if (app.model && scene.children.includes(app.model)) {
+          scene.remove(app.model);
+      }
+      
+      // Zustand zurücksetzen
+      app.ar.hitTestSourceRequested = false; // Wird gleich aufgerufen
+      app.ar.hitTestSource = null;
+      app.ar.reticle.visible = false;
+      app.ar.modelPlaced = false;
+
+      // Anzeigen der Hinweise
+      if (controlsDiv) controlsDiv.style.display = 'none';
+      if (hint) {
+          hint.style.display = 'block';
+          hint.textContent = 'Suche eine Oberfläche (z. B. Tisch oder Boden)...';
+      }
   });
 
   renderer.xr.addEventListener('sessionend', () => {
@@ -53,11 +71,11 @@ export function setupAR(app) {
     app.ar.hitTestSource = null;
     app.ar.reticle.visible = false;
     app.ar.modelPlaced = false;
-    // Wenn das Modell sichtbar war, wird es automatisch wieder in der Szene sein,
-    // aber wir setzen die Animation zurück, falls nötig.
+    if (controlsDiv) controlsDiv.style.display = 'flex'; // Kontrollen wieder anzeigen
   });
 
-  // --- request hit-test source (like Nik's requestHitTestSource) ---
+
+  // --- request hit-test source ---
   function requestHitTestSource() {
     const session = renderer.xr.getSession();
     if (!session) return;
@@ -67,7 +85,7 @@ export function setupAR(app) {
       session.requestHitTestSource({ space: referenceSpace }).then((source) => {
         app.ar.hitTestSource = source;
       });
-    });
+    }).catch(err => console.error("HitTest-Quelle konnte nicht erstellt werden:", err));
 
     app.ar.hitTestSourceRequested = true;
   }
@@ -76,45 +94,45 @@ export function setupAR(app) {
   function onSelect() {
     if (!app.model) return;
 
-    // Nur das erste Platzieren behandeln (wie im Originalcode)
-    if (!app.ar.modelPlaced && app.ar.reticle.visible) {
+    // Nur das erste Platzieren behandeln
+    if (!app.ar.modelPlaced) {
       
-      // Platzierung an Reticle-Position
-      app.model.position.setFromMatrixPosition(app.ar.reticle.matrix);
-      app.model.rotation.set(0, 0, 0); // Rotation zurücksetzen
-      app.model.scale.setScalar(0.001); // Startskalierung für Animation
-      
-      scene.add(app.model);
-      app.model.visible = true; // Sicherstellen, dass es sichtbar ist (falls vorher unsichtbar)
-      
-      // Pop-In Animation (TWEEN erforderlich)
-      new TWEEN.Tween(app.model.scale)
-        .to({ x: 1, y: 1, z: 1 }, 800)
-        .easing(TWEEN.Easing.Elastic.Out)
-        .start();
+      if (app.ar.reticle.visible) {
+          // Platzierung an Reticle-Position
+          app.model.position.setFromMatrixPosition(app.ar.reticle.matrix);
+          app.model.rotation.set(0, 0, 0); 
+          app.model.scale.setScalar(0.001); // Startskalierung für Animation
+          
+          scene.add(app.model);
+          
+          // Pop-In Animation (TWEEN erforderlich)
+          new TWEEN.Tween(app.model.scale)
+            .to({ x: 1, y: 1, z: 1 }, 800)
+            .easing(TWEEN.Easing.Elastic.Out)
+            .start();
 
-      app.ar.reticle.visible = false;
-      app.ar.modelPlaced = true;
-      if(hint) hint.textContent = '🎉 Modell platziert!';
-      
-    } else if (!app.ar.modelPlaced && !app.ar.reticle.visible) {
-      // Fallback: Platzierung ohne Reticle (wie im Original-Fallback)
-      const pos = new THREE.Vector3(0, -0.3, -1.0).applyMatrix4(camera.matrixWorld);
-      app.model.position.copy(pos);
-      app.model.scale.setScalar(1); // Keine Animation im Fallback
-      scene.add(app.model);
-      app.model.visible = true;
-      app.ar.modelPlaced = true;
-      if(hint) hint.textContent = '🎉 Modell im Fallback platziert!';
+          app.ar.reticle.visible = false;
+          app.ar.modelPlaced = true;
+          if(hint) hint.textContent = '🎉 Modell platziert!';
+          
+      } else {
+          // Fallback: Platzierung ohne Reticle (Modell vor Kamera)
+          const pos = new THREE.Vector3(0, -0.3, -1.0).applyMatrix4(camera.matrixWorld);
+          app.model.position.copy(pos);
+          app.model.scale.setScalar(1); 
+          scene.add(app.model);
+          
+          app.ar.reticle.visible = false; // Reticle trotzdem ausblenden
+          app.ar.modelPlaced = true;
+          if(hint) hint.textContent = '🎉 Modell im Fallback platziert!';
+      }
     }
-    
-    // Ansonsten (wenn Modell platziert ist) passiert bei onSelect nichts (keine Interaktion in dieser einfachen Version)
   }
 
   // --- Render Loop ---
   renderer.setAnimationLoop(function (timestamp, frame) {
     
-    TWEEN.update(); // Wichtig für die Animation
+    TWEEN.update(); // Wichtig für die Pop-In Animation
     
     // Nur Reticle anzeigen, wenn HitTest verfügbar und Modell noch nicht platziert
     if (frame && !app.ar.modelPlaced) {
