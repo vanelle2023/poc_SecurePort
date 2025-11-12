@@ -1,15 +1,12 @@
-// js/arHandler.js (ENDGÜLTIGE KORRIGIERTE VERSION)
-
 import * as THREE from 'three';
 import { ARButton } from 'three/examples/jsm/webxr/ARButton.js';
-// TWEEN wird für die Pop-In Animation des Modells benötigt
 import TWEEN from 'https://unpkg.com/@tweenjs/tween.js@18.6.4/dist/tween.esm.js'; 
 
 export function setupAR(app) {
   const { renderer, scene, camera } = app;
 
   const hint = document.getElementById('hint');
-  const controlsDiv = document.getElementById('controls'); // Ist im Originalcode enthalten
+  const controlsDiv = document.getElementById('controls');
 
   // simple state
   app.ar = app.ar || {};
@@ -44,8 +41,24 @@ export function setupAR(app) {
   controller.addEventListener('select', onSelect);
   scene.add(controller);
   
+  // --- request hit-test source ---
+  function requestHitTestSource() {
+    const session = renderer.xr.getSession();
+    if (!session || app.ar.hitTestSourceRequested) return;
+    
+    // Die Hit-Test-Quelle wird im 'viewer'-Raum erstellt
+    session.requestReferenceSpace('viewer').then((referenceSpace) => {
+      session.requestHitTestSource({ space: referenceSpace }).then((source) => {
+        app.ar.hitTestSource = source;
+      }).catch(err => console.error("HitTest-Quelle konnte nicht erstellt werden:", err));
+    }).catch(err => console.error("Viewer Reference Space konnte nicht erstellt werden:", err));
+
+    app.ar.hitTestSourceRequested = true;
+  }
+
   // --- Session Event Listeners ---
   renderer.xr.addEventListener('sessionstart', async () => {
+      // 1. Modelle entfernen (GroundMesh + Hauptmodell)
       if (app.groundMesh && scene.children.includes(app.groundMesh)) {
           scene.remove(app.groundMesh);
       }
@@ -53,13 +66,16 @@ export function setupAR(app) {
           scene.remove(app.model);
       }
       
-      // Zustand zurücksetzen
-      app.ar.hitTestSourceRequested = false; // Wird gleich aufgerufen
+      // 2. Zustand zurücksetzen
       app.ar.hitTestSource = null;
       app.ar.reticle.visible = false;
       app.ar.modelPlaced = false;
-
-      // Anzeigen der Hinweise
+      
+      // 3. WICHTIG: Hit-Test-Quelle SOFORT anfordern, nicht erst im Render-Loop
+      app.ar.hitTestSourceRequested = false; // Zurücksetzen, um den Aufruf zu erzwingen
+      requestHitTestSource();
+      
+      // 4. Anzeigen der Hinweise
       if (controlsDiv) controlsDiv.style.display = 'none';
       if (hint) {
           hint.style.display = 'block';
@@ -72,68 +88,49 @@ export function setupAR(app) {
     app.ar.hitTestSource = null;
     app.ar.reticle.visible = false;
     app.ar.modelPlaced = false;
-    if (controlsDiv) controlsDiv.style.display = 'flex'; // Kontrollen wieder anzeigen
+    if (controlsDiv) controlsDiv.style.display = 'flex'; 
+    
+    // GroundMesh wiederherstellen (für Desktop-Ansicht)
     if (app.groundMesh && !scene.children.includes(app.groundMesh)) {
         scene.add(app.groundMesh);
     }
-    
-    // Modell wiederherstellen, falls es im AR-Modus platziert wurde (originaler Code hatte dies)
+    // Modell wiederherstellen (falls es im AR-Modus platziert wurde)
     if (app.model && !scene.children.includes(app.model)) scene.add(app.model);
   });
 
 
-  // --- request hit-test source ---
-  function requestHitTestSource() {
-    const session = renderer.xr.getSession();
-    if (!session) return;
-    
-    // Die Hit-Test-Quelle wird im 'viewer'-Raum erstellt
-    session.requestReferenceSpace('viewer').then((referenceSpace) => {
-      session.requestHitTestSource({ space: referenceSpace }).then((source) => {
-        app.ar.hitTestSource = source;
-      });
-    }).catch(err => console.error("HitTest-Quelle konnte nicht erstellt werden:", err));
-
-    app.ar.hitTestSourceRequested = true;
-  }
-
   // --- select handler: place model ---
   function onSelect() {
-    if (!app.model) return;
+    if (!app.model || app.ar.modelPlaced) return; // Nur beim ersten Tippen platzieren
 
-    // Nur das erste Platzieren behandeln
-    if (!app.ar.modelPlaced) {
-      
-      if (app.ar.reticle.visible) {
-          // Platzierung an Reticle-Position
-          app.model.position.setFromMatrixPosition(app.ar.reticle.matrix);
-          app.model.rotation.set(0, 0, 0); 
-          app.model.scale.setScalar(0.001); // Startskalierung für Animation
-          
-          scene.add(app.model);
-          
-          // Pop-In Animation (TWEEN erforderlich)
-          new TWEEN.Tween(app.model.scale)
-            .to({ x: 1, y: 1, z: 1 }, 800)
-            .easing(TWEEN.Easing.Elastic.Out)
-            .start();
-
-          app.ar.reticle.visible = false;
-          app.ar.modelPlaced = true;
-          if(hint) hint.textContent = '🎉 Modell platziert!';
-          
-      } else {
-          // Fallback: Platzierung ohne Reticle (Modell vor Kamera)
-          const pos = new THREE.Vector3(0, -0.3, -1.0).applyMatrix4(camera.matrixWorld);
-          app.model.position.copy(pos);
-          app.model.scale.setScalar(1); 
-          scene.add(app.model);
-          
-          app.ar.reticle.visible = false; // Reticle trotzdem ausblenden
-          app.ar.modelPlaced = true;
-          if(hint) hint.textContent = '🎉 Modell im Fallback platziert!';
-      }
+    let pos = new THREE.Vector3();
+    let isFallback = false;
+    
+    if (app.ar.reticle.visible) {
+        // Platzierung an Reticle-Position
+        pos.setFromMatrixPosition(app.ar.reticle.matrix);
+    } else {
+        // Fallback: Platzierung ohne Reticle (Modell vor Kamera)
+        pos.set(0, -0.3, -1.0).applyMatrix4(camera.matrixWorld);
+        isFallback = true;
     }
+    
+    app.model.position.copy(pos);
+    app.model.rotation.set(0, 0, 0); 
+    app.model.scale.setScalar(0.001); // Startskalierung für Animation
+    
+    scene.add(app.model);
+    
+    // Pop-In Animation
+    new TWEEN.Tween(app.model.scale)
+      .to({ x: 1, y: 1, z: 1 }, 800)
+      .easing(TWEEN.Easing.Elastic.Out)
+      .start();
+
+    app.ar.reticle.visible = false;
+    app.ar.modelPlaced = true;
+    
+    if(hint) hint.textContent = isFallback ? '🎉 Modell im Fallback platziert!' : '🎉 Modell platziert!';
   }
 
   // --- Render Loop ---
@@ -143,9 +140,7 @@ export function setupAR(app) {
     
     // Nur Reticle anzeigen, wenn HitTest verfügbar und Modell noch nicht platziert
     if (frame && !app.ar.modelPlaced) {
-      if (!app.ar.hitTestSourceRequested) {
-        requestHitTestSource();
-      }
+      // *KEIN* Aufruf von requestHitTestSource() hier mehr! Er wurde in sessionstart verschoben.
 
       if (app.ar.hitTestSource) {
         const hitTestResults = frame.getHitTestResults(app.ar.hitTestSource);
@@ -166,12 +161,15 @@ export function setupAR(app) {
             if(hint) hint.textContent = '📍 Tippe, um das Modell zu platzieren';
           } else {
             app.ar.reticle.visible = false;
-            if(hint) hint.textContent = 'Suche eine Oberfläche...';
+            if(hint) hint.textContent = 'Suche eine Oberfläche... (Pose fehlgeschlagen)';
           }
         } else {
           app.ar.reticle.visible = false;
           if(hint) hint.textContent = 'Suche eine Oberfläche...';
         }
+      } else if (hint && app.ar.hitTestSourceRequested) {
+          // Zeige einen Hinweis an, falls die Quelle noch geladen wird
+          hint.textContent = 'Lade AR-Erkennung...';
       }
     }
     
