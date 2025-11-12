@@ -37,6 +37,11 @@ export function setupAR(app) {
   scene.add(reticle);
   app.ar.reticle = reticle;
 
+  window.setInterval(() => {
+    app.ar.reticle.visible = true;
+    app.ar.reticle.position.set(0, 0, -1);
+  }, 1000);
+
   // AR Controller für 'select'
   const controller = renderer.xr.getController(0);
   controller.addEventListener('select', () => {
