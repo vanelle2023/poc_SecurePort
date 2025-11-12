@@ -86,8 +86,14 @@ export function setupScene(app) {
 
     // Groundplane hinzufügen
     const groundMesh = createGround(scene, newBox, scene.environment);
-
-    scene.add(model);
+    // --- Modell zunächst unsichtbar (wird erst im AR-Modus platziert) ---
+    model.visible = false;
+    // --- Prüfen, ob XR aktiv ist (normaler 3D-Viewer vs. AR) ---
+    if (!renderer.xr.isPresenting) {
+      // Normaler 3D-Modus → Modell gleich anzeigen
+      model.visible = true;
+      scene.add(model);
+    }
 
     // Referenzen im globalen Objekt speichern
     app.model = model;
