@@ -8,13 +8,13 @@ export function setupAR(app) {
   const hint = document.getElementById('hint');
   const controlsDiv = document.getElementById('controls');
 
-  // --- State ---
+  // === Zustände ===
   let reticle, hitTestSource = null, localRefSpace = null;
   let hitTestReady = false, arPlaced = false;
   let dragging = false, floatMode = false;
   let planeTrackingSupported = false;
 
-  // === UI-Buttons ===
+  // === UI Buttons ===
   const floatBtn = createButton('🪁 Schwebemodus', 'bottom:80px;right:20px;', () => {
     floatMode = !floatMode;
     floatBtn.textContent = floatMode ? '🛬 Stop' : '🪁 Schwebemodus';
@@ -46,15 +46,27 @@ export function setupAR(app) {
   scaleDownBtn.onclick = () => app.model?.scale.multiplyScalar(0.9);
   rotateBtn.onclick = () => app.model?.rotation.y += Math.PI / 6;
 
-  // === Reticle ===
+  // === Reticle (Platzierungsanzeige) ===
   initReticle();
 
-  // === AR Button mit Plane Detection ===
-  document.body.appendChild(ARButton.createButton(renderer, {
-    requiredFeatures: ['hit-test', 'dom-overlay'],
-    optionalFeatures: ['plane-detection', 'local-floor'],
-    domOverlay: { root: document.body }
-  }));
+  // === AR Button mit intelligentem Fallback ===
+  const supportsDomOverlay = navigator.userAgent.includes('Chrome') && /Android/i.test(navigator.userAgent);
+
+  const features = {
+    requiredFeatures: ['hit-test'],
+    optionalFeatures: ['local-floor', 'plane-detection'],
+  };
+  if (supportsDomOverlay) {
+    features.optionalFeatures.push('dom-overlay');
+    features.domOverlay = { root: document.body };
+  }
+
+  try {
+    const arBtn = ARButton.createButton(renderer, features);
+    document.body.appendChild(arBtn);
+  } catch (e) {
+    console.warn('⚠️ ARButton konnte nicht erstellt werden:', e);
+  }
 
   // === Session Start ===
   renderer.xr.addEventListener('sessionstart', async () => {
@@ -97,14 +109,12 @@ export function setupAR(app) {
     if (app.model && !scene.children.includes(app.model)) scene.add(app.model);
   });
 
-  // === Platzieren durch Tap ===
+  // === Tap → Modell platzieren ===
   renderer.xr.addEventListener('select', () => {
     if (!app.model) return;
 
-    // Erste Platzierung
     if (!arPlaced) {
       let pos = new THREE.Vector3();
-
       if (planeTrackingSupported && reticle.visible) {
         pos.setFromMatrixPosition(reticle.matrix);
       } else {
@@ -163,7 +173,7 @@ export function setupAR(app) {
       if (hits.length > 0) {
         const pose = hits[0].getPose(localRefSpace);
         const pos = new THREE.Vector3().setFromMatrixPosition(new THREE.Matrix4().fromArray(pose.transform.matrix));
-        app.model.position.lerp(pos, 0.2);
+        app.model.position.lerp(pos, 0.25);
       }
     }
 
