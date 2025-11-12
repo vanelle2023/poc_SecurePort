@@ -50,6 +50,7 @@ export function setupAR(app) {
       // (das ist der Fall, wenn es in sceneSetup.js hinzugefügt wurde).
       if (app.model && scene.children.includes(app.model)) {
           scene.remove(app.model);
+          scene.remove(app.groundMesh);
       }
       
       // Zustand zurücksetzen
