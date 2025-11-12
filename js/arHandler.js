@@ -73,6 +73,12 @@ export function setupAR(app) {
     app.ar.reticle.visible = false;
     app.ar.modelPlaced = false;
     if (controlsDiv) controlsDiv.style.display = 'flex'; // Kontrollen wieder anzeigen
+    if (app.groundMesh && !scene.children.includes(app.groundMesh)) {
+        scene.add(app.groundMesh);
+    }
+    
+    // Modell wiederherstellen, falls es im AR-Modus platziert wurde (originaler Code hatte dies)
+    if (app.model && !scene.children.includes(app.model)) scene.add(app.model);
   });
 
 
