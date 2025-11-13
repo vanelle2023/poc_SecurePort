@@ -108,15 +108,6 @@ export function setupAR(app) {
 
   // --- Render Loop für Reticle ---
   renderer.setAnimationLoop((timestamp, frame) => {
-    if (renderer.xr.isPresenting) {
-      const box = new THREE.Mesh(
-        new THREE.BoxGeometry(0.3,0.3,0.3),
-        new THREE.MeshBasicMaterial({ color: 0x00ff00 })
-      );
-      box.position.set(0, 0, -1).applyMatrix4(camera.matrixWorld); 
-      scene.add(box);
-    }
-
     // Modell schon platziert? Kein Reticle mehr anzeigen
     if (frame && !app.ar.modelPlaced && app.ar.hitTestSource) {
       const hitTestResults = frame.getHitTestResults(app.ar.hitTestSource);
