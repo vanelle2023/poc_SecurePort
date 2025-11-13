@@ -35,12 +35,6 @@ export function setupAR(app) {
   reticle.matrixAutoUpdate = false;
   reticle.visible = false;
   scene.add(reticle);
-  
-  reticle.visible = true;
-  reticle.position.set(0, 0, -1); // 1 Meter vor die Kamera
-  reticle.material.color.set(0xff0000);
-  reticle.material.opacity = 1;
-  console.log('Reticle ist im Scene:', reticle);
 
   app.ar.reticle = reticle;
 
@@ -114,6 +108,15 @@ export function setupAR(app) {
 
   // --- Render Loop für Reticle ---
   renderer.setAnimationLoop((timestamp, frame) => {
+    if (renderer.xr.isPresenting) {
+      const box = new THREE.Mesh(
+        new THREE.BoxGeometry(0.3,0.3,0.3),
+        new THREE.MeshBasicMaterial({ color: 0x00ff00 })
+      );
+      box.position.set(0, 0, -1).applyMatrix4(camera.matrixWorld); 
+      scene.add(box);
+    }
+
     // Modell schon platziert? Kein Reticle mehr anzeigen
     if (frame && !app.ar.modelPlaced && app.ar.hitTestSource) {
       const hitTestResults = frame.getHitTestResults(app.ar.hitTestSource);
