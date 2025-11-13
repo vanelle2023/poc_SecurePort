@@ -35,12 +35,14 @@ export function setupAR(app) {
   reticle.matrixAutoUpdate = false;
   reticle.visible = false;
   scene.add(reticle);
-  app.ar.reticle = reticle;
+  
+  reticle.visible = true;
+  reticle.position.set(0, 0, -1); // 1 Meter vor die Kamera
+  reticle.material.color.set(0xff0000);
+  reticle.material.opacity = 1;
+  console.log('Reticle ist im Scene:', reticle);
 
-  window.setInterval(() => {
-    app.ar.reticle.visible = true;
-    app.ar.reticle.position.set(0, 0, -1);
-  }, 1000);
+  app.ar.reticle = reticle;
 
   // AR Controller für 'select'
   const controller = renderer.xr.getController(0);
